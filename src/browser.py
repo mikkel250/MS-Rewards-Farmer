@@ -1,5 +1,6 @@
 import contextlib
 import logging
+import os
 import random
 import uuid
 from pathlib import Path
@@ -56,10 +57,20 @@ class Browser:
     def browserSetup(
         self,
     ) -> WebDriver:
-        options = webdriver.ChromeOptions()
-        options.headless = self.headless
-        options.add_argument(f"--lang={self.localeLang}")
-        options.add_argument("--log-level=3")
+        # Check if the chromedriver directory exists and has a chromedriver file
+        chromedriver_path = os.path.join(
+            os.path.dirname(__file__), "..", "chromedriver", "chromedriver"
+        )
+        if os.path.exists(chromedriver_path):
+            # If the chromedriver exists, use it
+            service = Service(executable_path=chromedriver_path)
+            driver = webdriver.Chrome(service=service)
+        else:
+            # Fallback to undetected_chromedriver if local chromedriver is not found
+            options = webdriver.ChromeOptions()
+            options.headless = self.headless
+            options.add_argument(f"--lang={self.localeLang}")
+            options.add_argument("--log-level=3")
 
         options.add_argument("--ignore-certificate-errors")
         options.add_argument("--ignore-certificate-errors-spki-list")
