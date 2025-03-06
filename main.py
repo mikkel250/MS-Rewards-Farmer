@@ -1,3 +1,11 @@
+# searches the crypto list by default
+
+# Use a flag for Google Trends for search terms instead
+# python main.py -s trends
+
+# Or with the long form
+# python main.py --search-source trends
+
 import argparse
 import atexit
 import csv
@@ -27,6 +35,7 @@ from src import (
 from src.loggingColoredFormatter import ColoredFormatter
 from src.notifier import Notifier
 from src.utils import Utils
+from src.completion_status import CompletionStatus
 
 POINTS_COUNTER = 0
 
@@ -41,12 +50,13 @@ def main():
     atexit.register(cleanupChromeProcesses)
     # Load previous day's points data
     previous_points_data = load_previous_points_data()
-
-    loadedAccounts = setupAccounts()
+    # Initialize completion status tracker
+    completion_status = CompletionStatus()
+    completion_status.clear_old_status()  # Clean up old status entries
 
     # Process accounts
     for currentAccount in loadedAccounts:
-        process_account_with_retry(currentAccount, notifier, args, previous_points_data)
+        process_account_with_retry(currentAccount, notifier, args, previous_points_data, completion_status)
 
     # Save the current day's points data for the next day in the "logs" folder
     save_previous_points_data(previous_points_data)
@@ -170,6 +180,14 @@ def argumentParser() -> argparse.Namespace:
         default=None,
         help="Optional: Set fixed Chrome version (ex. 118)",
     )
+    parser.add_argument(
+        "-s",
+        "--search-source",
+        type=str,
+        choices=["trends", "crypto"],
+        default="crypto",
+        help="Optional: Source for search terms (trends: Google Trends, crypto: predefined crypto list)",
+    )
     return parser.parse_args()
 
 
@@ -204,7 +222,7 @@ def setupAccounts() -> list:
     return loadedAccounts
 
 
-def executeBot(currentAccount, notifier: Notifier, args: argparse.Namespace):
+def executeBot(currentAccount, notifier: Notifier, args: argparse.Namespace, completion_status: CompletionStatus):
     logging.info(
         f'********************{currentAccount.get("username", "")}********************'
     )
@@ -212,22 +230,50 @@ def executeBot(currentAccount, notifier: Notifier, args: argparse.Namespace):
     remainingSearches = 0
     remainingSearchesM = 0
     startingPoints = 0
+    account_email = currentAccount.get("username", "")
 
     with Browser(mobile=False, account=currentAccount, args=args) as desktopBrowser:
-        accountPointsCounter = Login(desktopBrowser).login()
-        startingPoints = accountPointsCounter
-        if startingPoints == "Locked":
-            notifier.send("🚫 Account is Locked", currentAccount)
-            return 0
-        if startingPoints == "Verify":
-            notifier.send("❗ Account needs to be verified", currentAccount)
-            return 0
+        # Only login if not already completed
+        if not completion_status.is_completed(account_email, "login"):
+            accountPointsCounter = Login(desktopBrowser).login()
+            startingPoints = accountPointsCounter
+            if startingPoints == "Locked":
+                notifier.send("🚫 Account is Locked", currentAccount)
+                return 0
+            if startingPoints == "Verify":
+                notifier.send("❗ Account needs to be verified", currentAccount)
+                return 0
+            completion_status.mark_completed(account_email, "login")
+        else:
+            logging.info("[LOGIN] Skipping login as it was already completed")
+            accountPointsCounter = desktopBrowser.utils.getAccountPoints()
+            startingPoints = accountPointsCounter
+
         logging.info(
             f"[POINTS] You have {desktopBrowser.utils.formatNumber(accountPointsCounter)} points on your account"
         )
-        DailySet(desktopBrowser).completeDailySet()
-        PunchCards(desktopBrowser).completePunchCards()
-        MorePromotions(desktopBrowser).completeMorePromotions()
+
+        # Only complete daily set if not already done
+        if not completion_status.is_completed(account_email, "daily_set"):
+            DailySet(desktopBrowser).completeDailySet()
+            completion_status.mark_completed(account_email, "daily_set")
+        else:
+            logging.info("[DAILY SET] Skipping as it was already completed")
+
+        # Only complete punch cards if not already done
+        if not completion_status.is_completed(account_email, "punch_cards"):
+            PunchCards(desktopBrowser).completePunchCards()
+            completion_status.mark_completed(account_email, "punch_cards")
+        else:
+            logging.info("[PUNCH CARDS] Skipping as it was already completed")
+
+        # Only complete more promotions if not already done
+        if not completion_status.is_completed(account_email, "more_promotions"):
+            MorePromotions(desktopBrowser).completeMorePromotions()
+            completion_status.mark_completed(account_email, "more_promotions")
+        else:
+            logging.info("[MORE PROMOS] Skipping as it was already completed")
+
         # VersusGame(desktopBrowser).completeVersusGame()
         (
             remainingSearches,
@@ -240,10 +286,14 @@ def executeBot(currentAccount, notifier: Notifier, args: argparse.Namespace):
         )  # Random pause between 11 to 15 seconds
         time.sleep(pause_before_search)
 
-        if remainingSearches != 0:
-            accountPointsCounter = Searches(desktopBrowser).bingSearches(
+        # Only do desktop searches if not already completed
+        if remainingSearches != 0 and not completion_status.is_completed(account_email, "desktop_searches"):
+            accountPointsCounter = Searches(desktopBrowser, search_source=args.search_source).bingSearches(
                 remainingSearches
             )
+            completion_status.mark_completed(account_email, "desktop_searches")
+        elif completion_status.is_completed(account_email, "desktop_searches"):
+            logging.info("[BING] Skipping desktop searches as they were already completed")
 
         pause_after_search = random.uniform(
             11.0, 15.0
@@ -255,18 +305,22 @@ def executeBot(currentAccount, notifier: Notifier, args: argparse.Namespace):
         goalTitle = desktopBrowser.utils.getGoalTitle()
         desktopBrowser.closeBrowser()
 
-    if remainingSearchesM != 0:
+    # Only do mobile searches if not already completed
+    if remainingSearchesM != 0 and not completion_status.is_completed(account_email, "mobile_searches"):
         desktopBrowser.closeBrowser()
         with Browser(mobile=True, account=currentAccount, args=args) as mobileBrowser:
             accountPointsCounter = Login(mobileBrowser).login()
-            accountPointsCounter = Searches(mobileBrowser).bingSearches(
+            accountPointsCounter = Searches(mobileBrowser, search_source=args.search_source).bingSearches(
                 remainingSearchesM
             )
+            completion_status.mark_completed(account_email, "mobile_searches")
 
             mobileBrowser.utils.goHome()
             goalPoints = mobileBrowser.utils.getGoalPoints()
             goalTitle = mobileBrowser.utils.getGoalTitle()
             mobileBrowser.closeBrowser()
+    elif completion_status.is_completed(account_email, "mobile_searches"):
+        logging.info("[BING] Skipping mobile searches as they were already completed")
 
     logging.info(
         f"[POINTS] You have earned {desktopBrowser.utils.formatNumber(accountPointsCounter - startingPoints)} points today !"
@@ -326,11 +380,11 @@ def save_previous_points_data(data):
     with open(logs_directory / "previous_points_data.json", "w") as file:
         json.dump(data, file, indent=4)
 
-def process_account_with_retry(currentAccount, notifier, args, previous_points_data):
+def process_account_with_retry(currentAccount, notifier, args, previous_points_data, completion_status):
     retries = 3
     while retries > 0:
         try:
-            earned_points = executeBot(currentAccount, notifier, args)
+            earned_points = executeBot(currentAccount, notifier, args, completion_status)
             account_name = currentAccount.get("username", "")
             previous_points = previous_points_data.get(account_name, 0)
 

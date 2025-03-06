@@ -5,6 +5,7 @@ import random
 import time
 import urllib.parse
 from pathlib import Path
+import logging
 
 import requests
 from selenium.webdriver.chrome.webdriver import WebDriver
@@ -178,11 +179,38 @@ class Utils:
 
     def getAccountPoints(self) -> int:
         # Get the available points from the dashboard data
-        return self.getDashboardData()["userStatus"]["availablePoints"]
+        max_retries = 5
+        for _ in range(max_retries):
+            try:
+                # Ensure we're on the rewards page
+                if "rewards.bing.com" not in self.webdriver.current_url:
+                    self.webdriver.get(BASE_URL)
+                    time.sleep(2)  # Wait for page load
+                
+                # Wait for dashboard to be available
+                self.webdriver.execute_script("return typeof dashboard !== 'undefined'")
+                dashboard_data = self.getDashboardData()
+                if dashboard_data and "userStatus" in dashboard_data:
+                    return dashboard_data["userStatus"]["availablePoints"]
+            except Exception as e:
+                logging.warning(f"[POINTS] Error getting points: {str(e)}")
+                time.sleep(2)  # Wait before retrying
+        return 0
 
     def getBingAccountPoints(self) -> int:
         # Get the Bing account points from the Bing info
-        return data["userInfo"]["balance"] if (data := self.getBingInfo()) else 0
+        max_retries = 5
+        for _ in range(max_retries):
+            try:
+                # Wait for dashboard to be available
+                self.webdriver.execute_script("return typeof dashboard !== 'undefined'")
+                data = self.getBingInfo()
+                if data:
+                    return data["userInfo"]["balance"]
+            except Exception as e:
+                logging.warning(f"[BING] Error getting points: {str(e)}")
+                time.sleep(2)  # Wait before retrying
+        return 0
 
     def getGoalPoints(self) -> int:
         # Get the redemption goal points from the dashboard data
