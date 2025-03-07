@@ -7,6 +7,7 @@ import os
 from datetime import datetime
 import re
 from typing import Literal
+from pathlib import Path
 
 import requests
 from selenium.common.exceptions import TimeoutException
@@ -27,12 +28,13 @@ class Searches:
         # Only create results directory and files if using crypto list
         if self.search_source == "list":
             # Create a directory for search results if it doesn't exist
-            self.results_dir = "search_results"
+            script_dir = Path(__file__).resolve().parent.parent
+            self.results_dir = script_dir / "search_results"
             if not os.path.exists(self.results_dir):
                 os.makedirs(self.results_dir)
             # Create a new results file for each day
-            self.results_file = os.path.join(self.results_dir, f"crypto_search_results_{datetime.now().strftime('%Y%m%d')}.json")
-            self.summary_file = os.path.join(self.results_dir, f"crypto_search_summary_{datetime.now().strftime('%Y%m%d')}.txt")
+            self.results_file = self.results_dir / f"crypto_search_results_{datetime.now().strftime('%Y%m%d')}.json"
+            self.summary_file = self.results_dir / f"crypto_search_summary_{datetime.now().strftime('%Y%m%d')}.txt"
             self.search_results = []
         else:
             self.results_dir = None
