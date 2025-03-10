@@ -26,7 +26,7 @@ class Searches:
             # Major Cryptocurrencies
             "bitcoin", "ethereum", "solana", "link", "tao", "ondo", "optimism", "base crypto",
             "ethereum layer 2 networks", "arbitrum", "polygon", "cardano", "hbar", "ton", "inj crypto",
-            "kaspa crypto", "xrp crypto"
+            "kaspa crypto", "xrp crypto",
             
             # DeFi & Infrastructure
             "defi", "web3", "blockchain", "crypto investing", "crypto trading", "crypto prices news", 
@@ -253,6 +253,11 @@ class Searches:
         )
 
         try:
+            # Get initial points to compare against
+            initial_points = self.browser.utils.getBingAccountPoints()
+            successful_searches = 0
+            points_per_search = 5  # Standard points per search, could be different for mobile/desktop
+
             # Get search terms based on source
             if self.search_source == "trends":
                 search_terms = self.getGoogleTrends(numberOfSearches)
@@ -273,19 +278,23 @@ class Searches:
             attempt = 0
             for word in search_terms:
                 i += 1
-                logging.info(f"[BING] {i}/{numberOfSearches}")
+                logging.info(f"[BING] Search {i}/{numberOfSearches}")
                 try:
-                    points = self.bingSearch(word)
-                    if points <= pointsCounter:
+                    current_points = self.bingSearch(word)
+                    
+                    # Check if points increased from the search
+                    if current_points > pointsCounter:
+                        successful_searches += 1
+                        pointsCounter = current_points
+                        attempt = 0  # Reset attempt counter on successful search
+                        logging.info(f"[BING] Successful search {successful_searches}/{numberOfSearches}")
+                    else:
                         attempt += 1
                         if attempt >= 2:
                             logging.warning("[BING] Possible blockage. Refreshing the page.")
                             self.webdriver.refresh()
                             time.sleep(5)  # Wait for refresh
                             attempt = 0
-                    else:
-                        pointsCounter = points
-                        attempt = 0  # Reset attempt counter on successful search
                 except Exception as e:
                     logging.warning(f"[BING] Error during search: {str(e)}")
                     attempt += 1
@@ -300,13 +309,23 @@ class Searches:
             if self.search_source == "list":
                 self.saveSearchResults()
             
+            # Log completion status
+            points_earned = pointsCounter - initial_points
             logging.info(
-                f"[BING] Finished {self.browser.browserType.capitalize()} Edge Bing searches !"
+                f"[BING] Completed {successful_searches}/{numberOfSearches} searches. "
+                f"Points earned: {points_earned}"
             )
+            
+            # Return false if we didn't complete all searches
+            if successful_searches < numberOfSearches:
+                logging.warning(f"[BING] Only completed {successful_searches} out of {numberOfSearches} searches")
+                return False
+                
+            return True
+
         except Exception as e:
             logging.error(f"[BING] Critical error during searches: {str(e)}")
-        
-        return pointsCounter
+            return False
 
     def bingSearch(self, word: str):
         # Function to perform a single Bing search
