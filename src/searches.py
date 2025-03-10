@@ -22,6 +22,29 @@ from src.utils import Utils
 
 class Searches:
     def __init__(self, browser: Browser, search_source: Literal["trends", "list"] = "list"):
+        CRYPTO_SEARCH_TERMS = [
+            # Major Cryptocurrencies
+            "bitcoin", "ethereum", "solana", "link", "tao", "ondo", "optimism", "base crypto",
+            "ethereum layer 2 networks", "arbitrum", "polygon", "cardano", "hbar", "ton", "inj crypto",
+            "kaspa crypto", "xrp crypto"
+            
+            # DeFi & Infrastructure
+            "defi", "web3", "blockchain", "crypto investing", "crypto trading", "crypto prices news", 
+            "crypto market", "crypto analysis", "social media trends in crypto", 
+            "trending crypto terms on social media",
+            
+            # New Tickers from List
+            "om crypto", "sui crypto", "aero crypto", "ath crypto", "ldo crypto", "jto crypto",
+            "pol crypto", "gno crypto", "hype crypto", "octa crypto", "io crypto", "cow crypto",
+            "trac crypto", "aave crypto", "fet crypto", "render crypto", "orai crypto", "prime crypto",
+            "virtual crypto", "akt crypto", "stx crypto", "corechain crypto", "uni crypto", "sei crypto",
+            "harry crypto", "HarryPotterObamaSonic10Inu crypto", "mog crypto", "op crypto", "mpl crypto", 
+            "syrup crypto", "acx crypto", "brett crypto", "fartcoin crypto", "butthole crypto", 
+            "retardio crypto", "naka crypto", "alph crypto", "mkr crypto", "apu crypto", "rio crypto", 
+            "dione crypto", "tia crypto", "lockin crypto", "imx crypto", "popcat crypto", "mini crypto", 
+            "usa crypto", "trias crypto", "goat crypto", "asscoin crypto", "hnt crypto", "SPX crypto", 
+            "GIGA crypto", "zro crypto", "cpool crypto", "uni crypto", "sei crypto", "scf crypto"
+        ]
         self.browser = browser
         self.webdriver = browser.webdriver
         self.search_source = search_source
@@ -207,27 +230,7 @@ class Searches:
         if not searchTerms:
             logging.error("[TRENDS] Failed to get any search terms")
             # Fallback to some basic search terms if API fails
-            searchTerms = [
-                # Major Cryptocurrencies
-                "bitcoin", "ethereum", "solana", "link", "tao", "ondo", "optimism", "base crypto",
-                "ethereum layer 2 networks", "arbitrum", "polygon", "cardano", "hbar", "ton",
-                
-                # DeFi & Infrastructure
-                "defi", "nft", "web3", "metaverse", "blockchain", "crypto investing", "crypto trading",
-                "crypto wallet", "crypto exchange", "crypto news", "crypto price", "crypto market",
-                "crypto analysis", "social media trends in crypto",
-                
-                # New Tickers from List
-                "om crypto", "sui crypto", "aero crypto", "ath crypto", "ldo crypto", "jto crypto",
-                "pol crypto", "gno crypto", "hype crypto", "octa crypto", "io crypto", "cow crypto",
-                "trac crypto", "aave crypto", "fet crypto", "render crypto", "orai crypto", "prime crypto",
-                "virtual crypto", "akt crypto", "stx crypto", "corechain crypto", "uni crypto", "sei crypto",
-                "harry crypto", "mog crypto", "op crypto", "mpl crypto", "acx crypto", "bretteth crypto",
-                "fartcoin crypto", "butthole crypto", "retardio crypto", "naka crypto", "alph crypto",
-                "mkr crypto", "apu crypto", "rio crypto", "dione crypto", "tia crypto", "lockin crypto",
-                "imx crypto", "popcat crypto", "mini crypto", "usa crypto", "trias crypto", "goat crypto",
-                "asscoin crypto", "hnt crypto", "SPX crypto", "GIGA crypto"
-            ]
+            searchTerms = self.CRYPTO_SEARCH_TERMS[:wordsCount]
             
         # Ensure we don't return more terms than requested
         return searchTerms[:wordsCount]
@@ -379,25 +382,5 @@ class Searches:
 
     def getCryptoList(self, wordsCount: int) -> list:
         """Get search terms from the predefined crypto list"""
-        searchTerms = [
-            # Major Cryptocurrencies
-            "bitcoin", "ethereum", "solana", "link", "tao", "ondo", "optimism", "base crypto",
-            "ethereum layer 2 networks", "arbitrum", "polygon", "cardano", "hbar", "ton",
-            
-            # DeFi & Infrastructure
-            "defi", "nft", "web3", "metaverse", "blockchain", "crypto investing", "crypto trading",
-            "crypto wallet", "crypto exchange", "crypto news", "crypto price", "crypto market",
-            "crypto analysis", "social media trends in crypto",
-            
-            # New Tickers from List
-            "om crypto", "sui crypto", "aero crypto", "ath crypto", "ldo crypto", "jto crypto",
-            "pol crypto", "gno crypto", "hype crypto", "octa crypto", "io crypto", "cow crypto",
-            "trac crypto", "aave crypto", "fet crypto", "render crypto", "orai crypto", "prime crypto",
-            "virtual crypto", "akt crypto", "stx crypto", "corechain crypto", "uni crypto", "sei crypto",
-            "harry crypto", "mog crypto", "op crypto", "mpl crypto", "acx crypto", "bretteth crypto",
-            "fartcoin crypto", "butthole crypto", "retardio crypto", "naka crypto", "alph crypto",
-            "mkr crypto", "apu crypto", "rio crypto", "dione crypto", "tia crypto", "lockin crypto",
-            "imx crypto", "popcat crypto", "mini crypto", "usa crypto", "trias crypto", "goat crypto",
-            "asscoin crypto", "hnt crypto"
-        ]
-        return searchTerms[:wordsCount]
+        # Randomly sample from the list instead of taking sequential items
+        return random.sample(self.CRYPTO_SEARCH_TERMS, min(wordsCount, len(self.CRYPTO_SEARCH_TERMS)))
