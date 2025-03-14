@@ -1,49 +1,117 @@
 import json
 import logging
-import random
-import time
-from datetime import date, timedelta
 import os
-from datetime import datetime
+import random
 import re
-from typing import Literal
+import time
+from datetime import date, datetime, timedelta
 from pathlib import Path
+from typing import Literal
 
 import requests
 from selenium.common.exceptions import TimeoutException
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
-from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.support.ui import WebDriverWait
 
 from src.browser import Browser
 from src.utils import Utils
 
 
 class Searches:
-    def __init__(self, browser: Browser, search_source: Literal["trends", "list"] = "list"):
-        CRYPTO_SEARCH_TERMS = [
+    def __init__(
+        self, browser: Browser, search_source: Literal["trends", "list"] = "list"
+    ):
+        self.CRYPTO_SEARCH_TERMS = [
             # Major Cryptocurrencies
-            "bitcoin", "ethereum", "solana", "link", "tao", "ondo", "optimism", "base crypto",
-            "ethereum layer 2 networks", "arbitrum", "polygon", "cardano", "hbar", "ton", "inj crypto",
-            "kaspa crypto", "xrp crypto",
-            
+            "bitcoin",
+            "ethereum",
+            "solana",
+            "link",
+            "tao",
+            "ondo",
+            "optimism",
+            "base crypto",
+            "ethereum layer 2 networks",
+            "arbitrum",
+            "polygon",
+            "cardano",
+            "hbar",
+            "ton",
+            "inj crypto",
+            "kaspa crypto",
+            "xrp crypto",
             # DeFi & Infrastructure
-            "defi", "web3", "blockchain", "crypto investing", "crypto trading", "crypto prices news", 
-            "crypto market", "crypto analysis", "social media trends in crypto", 
+            "defi",
+            "web3",
+            "blockchain",
+            "crypto investing",
+            "crypto trading",
+            "crypto prices news",
+            "crypto market",
+            "crypto analysis",
+            "social media trends in crypto",
             "trending crypto terms on social media",
-            
             # New Tickers from List
-            "om crypto", "sui crypto", "aero crypto", "ath crypto", "ldo crypto", "jto crypto",
-            "pol crypto", "gno crypto", "hype crypto", "octa crypto", "io crypto", "cow crypto",
-            "trac crypto", "aave crypto", "fet crypto", "render crypto", "orai crypto", "prime crypto",
-            "virtual crypto", "akt crypto", "stx crypto", "corechain crypto", "uni crypto", "sei crypto",
-            "harry crypto", "HarryPotterObamaSonic10Inu crypto", "mog crypto", "op crypto", "mpl crypto", 
-            "syrup crypto", "acx crypto", "brett crypto", "fartcoin crypto", "butthole crypto", 
-            "retardio crypto", "naka crypto", "alph crypto", "mkr crypto", "apu crypto", "rio crypto", 
-            "dione crypto", "tia crypto", "lockin crypto", "imx crypto", "popcat crypto", "mini crypto", 
-            "usa crypto", "trias crypto", "goat crypto", "asscoin crypto", "hnt crypto", "SPX crypto", 
-            "GIGA crypto", "zro crypto", "cpool crypto", "uni crypto", "sei crypto", "scf crypto"
+            "om crypto",
+            "sui crypto",
+            "aero crypto",
+            "ath crypto",
+            "ldo crypto",
+            "jto crypto",
+            "pol crypto",
+            "gno crypto",
+            "hype crypto",
+            "octa crypto",
+            "io crypto",
+            "cow crypto",
+            "trac crypto",
+            "aave crypto",
+            "fet crypto",
+            "render crypto",
+            "orai crypto",
+            "prime crypto",
+            "virtual crypto",
+            "akt crypto",
+            "stx crypto",
+            "corechain crypto",
+            "uni crypto",
+            "sei crypto",
+            "harry crypto",
+            "HarryPotterObamaSonic10Inu crypto",
+            "mog crypto",
+            "op crypto",
+            "mpl crypto",
+            "syrup crypto",
+            "acx crypto",
+            "brett crypto",
+            "fartcoin crypto",
+            "butthole crypto",
+            "retardio crypto",
+            "naka crypto",
+            "alph crypto",
+            "mkr crypto",
+            "apu crypto",
+            "rio crypto",
+            "dione crypto",
+            "tia crypto",
+            "lockin crypto",
+            "imx crypto",
+            "popcat crypto",
+            "mini crypto",
+            "usa crypto",
+            "trias crypto",
+            "goat crypto",
+            "asscoin crypto",
+            "hnt crypto",
+            "SPX crypto",
+            "GIGA crypto",
+            "zro crypto",
+            "cpool crypto",
+            "uni crypto",
+            "sei crypto",
+            "scf crypto",
         ]
         self.browser = browser
         self.webdriver = browser.webdriver
@@ -56,8 +124,14 @@ class Searches:
             if not os.path.exists(self.results_dir):
                 os.makedirs(self.results_dir)
             # Create a new results file for each day
-            self.results_file = self.results_dir / f"crypto_search_results_{datetime.now().strftime('%Y%m%d')}.json"
-            self.summary_file = self.results_dir / f"crypto_search_summary_{datetime.now().strftime('%Y%m%d')}.txt"
+            self.results_file = (
+                self.results_dir
+                / f"crypto_search_results_{datetime.now().strftime('%Y%m%d')}.json"
+            )
+            self.summary_file = (
+                self.results_dir
+                / f"crypto_search_summary_{datetime.now().strftime('%Y%m%d')}.txt"
+            )
             self.search_results = []
         else:
             self.results_dir = None
@@ -77,21 +151,25 @@ class Searches:
                 term_results[term].append(result)
 
             # Extract price information
-            price_pattern = r'\$[\d,]+\.?\d*'
+            price_pattern = r"\$[\d,]+\.?\d*"
             price_data = {}
             for term, results in term_results.items():
                 for result in results:
                     if result.get("price_info"):
                         price_match = re.search(price_pattern, result["price_info"])
                         if price_match:
-                            price = float(price_match.group().replace('$', '').replace(',', ''))
+                            price = float(
+                                price_match.group().replace("$", "").replace(",", "")
+                            )
                             if term not in price_data:
                                 price_data[term] = []
                             price_data[term].append(price)
 
             # Generate summary
-            with open(self.summary_file, 'w', encoding='utf-8') as f:
-                f.write(f"Crypto Search Summary - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+            with open(self.summary_file, "w", encoding="utf-8") as f:
+                f.write(
+                    f"Crypto Search Summary - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+                )
                 f.write("=" * 50 + "\n\n")
 
                 # Price Summary
@@ -128,7 +206,7 @@ class Searches:
     def saveSearchResults(self):
         """Save search results to a JSON file"""
         try:
-            with open(self.results_file, 'w', encoding='utf-8') as f:
+            with open(self.results_file, "w", encoding="utf-8") as f:
                 json.dump(self.search_results, f, indent=2, ensure_ascii=False)
             logging.info(f"[RESULTS] Search results saved to {self.results_file}")
             # Generate summary after saving results
@@ -146,17 +224,14 @@ class Searches:
 
             # Get the main search results
             results = self.webdriver.find_elements(By.CLASS_NAME, "b_algo")
-            
+
             # Extract relevant information
             snippets = []
             for result in results[:3]:  # Get top 3 results
                 try:
                     title = result.find_element(By.TAG_NAME, "h2").text
                     snippet = result.find_element(By.CLASS_NAME, "b_caption").text
-                    snippets.append({
-                        "title": title,
-                        "snippet": snippet
-                    })
+                    snippets.append({"title": title, "snippet": snippet})
                 except:
                     continue
 
@@ -171,14 +246,16 @@ class Searches:
                 "search_term": search_term,
                 "timestamp": datetime.now().isoformat(),
                 "price_info": price_info,
-                "top_results": snippets
+                "top_results": snippets,
             }
         except Exception as e:
-            logging.warning(f"[RESULTS] Failed to extract results for {search_term}: {str(e)}")
+            logging.warning(
+                f"[RESULTS] Failed to extract results for {search_term}: {str(e)}"
+            )
             return {
                 "search_term": search_term,
                 "timestamp": datetime.now().isoformat(),
-                "error": str(e)
+                "error": str(e),
             }
 
     def getGoogleTrends(self, wordsCount: int) -> list:
@@ -186,31 +263,35 @@ class Searches:
         searchTerms: list[str] = []
         i = 0
         max_retries = 3
-        
+
         while len(searchTerms) < wordsCount and i < max_retries:
             i += 1
             try:
                 # Fetching daily trends from Google Trends API
                 r = requests.get(
-                    f'https://trends.google.com/trends/api/dailytrends?hl={self.browser.localeLang}&geo={self.browser.localeGeo}&ns=15'
+                    f"https://trends.google.com/trends/api/dailytrends?hl={self.browser.localeLang}&geo={self.browser.localeGeo}&ns=15"
                 )
-                
+
                 # Check if response is valid
                 if r.status_code != 200:
-                    logging.warning(f"[TRENDS] API returned status code {r.status_code}")
+                    logging.warning(
+                        f"[TRENDS] API returned status code {r.status_code}"
+                    )
                     continue
-                    
+
                 # Remove the garbage characters that Google prepends
                 response_text = r.text
                 if response_text.startswith(")]}'"):
                     response_text = response_text[5:]
-                
+
                 # Parse the JSON response
                 trends = json.loads(response_text)
-                
+
                 # Extract search terms
                 if "default" in trends and "trendingSearchesDays" in trends["default"]:
-                    for topic in trends["default"]["trendingSearchesDays"][0]["trendingSearches"]:
+                    for topic in trends["default"]["trendingSearchesDays"][0][
+                        "trendingSearches"
+                    ]:
                         searchTerms.append(topic["title"]["query"].lower())
                         searchTerms.extend(
                             relatedTopic["query"].lower()
@@ -219,19 +300,19 @@ class Searches:
                     searchTerms = list(set(searchTerms))
                 else:
                     logging.warning("[TRENDS] Unexpected API response structure")
-                    
+
             except json.JSONDecodeError as e:
                 logging.warning(f"[TRENDS] Failed to parse JSON response: {str(e)}")
                 continue
             except Exception as e:
                 logging.warning(f"[TRENDS] Error fetching trends: {str(e)}")
                 continue
-                
+
         if not searchTerms:
             logging.error("[TRENDS] Failed to get any search terms")
             # Fallback to some basic search terms if API fails
             searchTerms = self.CRYPTO_SEARCH_TERMS[:wordsCount]
-            
+
         # Ensure we don't return more terms than requested
         return searchTerms[:wordsCount]
 
@@ -256,7 +337,9 @@ class Searches:
             # Get initial points to compare against
             initial_points = self.browser.utils.getBingAccountPoints()
             successful_searches = 0
-            points_per_search = 5  # Standard points per search, could be different for mobile/desktop
+            points_per_search = (
+                5  # Standard points per search, could be different for mobile/desktop
+            )
 
             # Get search terms based on source
             if self.search_source == "trends":
@@ -281,17 +364,21 @@ class Searches:
                 logging.info(f"[BING] Search {i}/{numberOfSearches}")
                 try:
                     current_points = self.bingSearch(word)
-                    
+
                     # Check if points increased from the search
                     if current_points > pointsCounter:
                         successful_searches += 1
                         pointsCounter = current_points
                         attempt = 0  # Reset attempt counter on successful search
-                        logging.info(f"[BING] Successful search {successful_searches}/{numberOfSearches}")
+                        logging.info(
+                            f"[BING] Successful search {successful_searches}/{numberOfSearches}"
+                        )
                     else:
                         attempt += 1
                         if attempt >= 2:
-                            logging.warning("[BING] Possible blockage. Refreshing the page.")
+                            logging.warning(
+                                "[BING] Possible blockage. Refreshing the page."
+                            )
                             self.webdriver.refresh()
                             time.sleep(5)  # Wait for refresh
                             attempt = 0
@@ -308,19 +395,21 @@ class Searches:
             # Only save results if using crypto list
             if self.search_source == "list":
                 self.saveSearchResults()
-            
+
             # Log completion status
             points_earned = pointsCounter - initial_points
             logging.info(
                 f"[BING] Completed {successful_searches}/{numberOfSearches} searches. "
                 f"Points earned: {points_earned}"
             )
-            
+
             # Return false if we didn't complete all searches
             if successful_searches < numberOfSearches:
-                logging.warning(f"[BING] Only completed {successful_searches} out of {numberOfSearches} searches")
+                logging.warning(
+                    f"[BING] Only completed {successful_searches} out of {numberOfSearches} searches"
+                )
                 return False
-                
+
             return True
 
         except Exception as e:
@@ -342,24 +431,26 @@ class Searches:
                 self.browser.utils.waitUntilClickable(By.ID, "sb_form_q")
                 searchbar = self.webdriver.find_element(By.ID, "sb_form_q")
                 searchbar.clear()
-                
+
                 # Add random typing delay to simulate human behavior
                 for char in word:
                     searchbar.send_keys(char)
-                    time.sleep(random.uniform(0.1, 0.3))  # Random delay between keystrokes
-                
+                    time.sleep(
+                        random.uniform(0.1, 0.3)
+                    )  # Random delay between keystrokes
+
                 # Random delay before submitting
                 time.sleep(random.uniform(0.5, 1.5))
                 searchbar.submit()
-                
+
                 # Wait for search results to load
                 time.sleep(3)
-                
+
                 # Only extract and save search results if using crypto list
                 if self.search_source == "list":
                     result_data = self.extractSearchResults(word)
                     self.search_results.append(result_data)
-                
+
                 # Random delay between searches (15-180 seconds)
                 time.sleep(Utils.randomSeconds(15, 180))
 
@@ -402,4 +493,6 @@ class Searches:
     def getCryptoList(self, wordsCount: int) -> list:
         """Get search terms from the predefined crypto list"""
         # Randomly sample from the list instead of taking sequential items
-        return random.sample(self.CRYPTO_SEARCH_TERMS, min(wordsCount, len(self.CRYPTO_SEARCH_TERMS)))
+        return random.sample(
+            self.CRYPTO_SEARCH_TERMS, min(wordsCount, len(self.CRYPTO_SEARCH_TERMS))
+        )

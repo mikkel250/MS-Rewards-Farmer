@@ -1,15 +1,16 @@
 import contextlib
 import logging
-import random
-import time
 import os
-import psutil
+import random
 import socket
+import time
 from pathlib import Path
 from typing import Any
 
 import ipapi
+import psutil
 import seleniumwire.undetected_chromedriver as webdriver
+import undetected_chromedriver as uc
 from selenium.webdriver.chrome.webdriver import WebDriver
 
 from src.userAgentGenerator import GenerateUserAgent
@@ -42,7 +43,7 @@ class Browser:
         if newBrowserConfig:
             self.browserConfig = newBrowserConfig
             Utils.saveBrowserConfig(self.userDataDir, self.browserConfig)
-        
+
         # Add retry logic for browser setup
         max_retries = 3
         retry_delay = 5
@@ -57,9 +58,13 @@ class Browser:
                 break
             except Exception as e:
                 if attempt == max_retries - 1:
-                    logging.error(f"[BROWSER] Failed to initialize browser after {max_retries} attempts: {str(e)}")
+                    logging.error(
+                        f"[BROWSER] Failed to initialize browser after {max_retries} attempts: {str(e)}"
+                    )
                     raise
-                logging.warning(f"[BROWSER] Browser initialization attempt {attempt + 1} failed: {str(e)}")
+                logging.warning(
+                    f"[BROWSER] Browser initialization attempt {attempt + 1} failed: {str(e)}"
+                )
                 time.sleep(retry_delay)
                 # Clean up any existing Chrome processes
                 self.cleanupChromeProcesses()
@@ -83,56 +88,66 @@ class Browser:
             try:
                 # Try to bind to the port
                 with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                    s.bind(('127.0.0.1', port))
+                    s.bind(("127.0.0.1", port))
                     return port
             except OSError:
                 continue
-        raise RuntimeError(f"Could not find an available port between {start_port} and {max_port}")
+        raise RuntimeError(
+            f"Could not find an available port between {start_port} and {max_port}"
+        )
 
     def cleanupChromeProcesses(self):
-        """Clean up any existing Chrome processes"""
+        """Clean up only Chrome processes created by this script"""
         try:
+            # Get the current script's process ID
+            current_pid = os.getpid()
+
             # Get all Chrome processes
             chrome_processes = []
-            for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
+            for proc in psutil.process_iter(["pid", "name", "ppid"]):
                 try:
-                    # Check for Chrome processes
-                    if 'chrome' in proc.info['name'].lower():
+                    # Only target Chrome processes that are children of our script
+                    if "chrome" in proc.info["name"].lower() and (
+                        proc.info["ppid"] == current_pid
+                        or psutil.Process(proc.info["ppid"]).ppid() == current_pid
+                    ):
                         chrome_processes.append(proc)
-                except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+                except (
+                    psutil.NoSuchProcess,
+                    psutil.AccessDenied,
+                    psutil.ZombieProcess,
+                ):
                     continue
 
-            # Terminate Chrome processes
+            # Terminate identified processes
             for proc in chrome_processes:
                 try:
-                    # Kill the process and its children
-                    parent = psutil.Process(proc.pid)
-                    children = parent.children(recursive=True)
-                    for child in children:
-                        child.terminate()
-                    parent.terminate()
-                except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+                    proc.terminate()
+                except (
+                    psutil.NoSuchProcess,
+                    psutil.AccessDenied,
+                    psutil.ZombieProcess,
+                ):
                     continue
 
-            # Wait for processes to terminate
-            time.sleep(2)
-            
-            # Force kill any remaining Chrome processes
-            for proc in chrome_processes:
-                try:
-                    if proc.is_running():
-                        proc.kill()
-                except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
-                    continue
+            time.sleep(1)  # Brief wait to ensure cleanup
 
-            time.sleep(1)  # Final wait to ensure cleanup
         except Exception as e:
             logging.warning(f"[BROWSER] Failed to cleanup Chrome processes: {str(e)}")
 
     def browserSetup(self, debug_port: int) -> WebDriver:
         # Configure and setup the Chrome browser
-        options = webdriver.ChromeOptions()
-        options.headless = self.headless
+        options = uc.ChromeOptions()
+        options.add_argument("--new-instance")  # Force new instance
+        options.add_argument("--user-data-dir=chrome-temp")  # Use separate user profile
+
+        if self.headless:
+            options.add_argument("--headless=new")
+        if self.userDataDir:
+            options.add_argument(f"--user-data-dir={self.userDataDir}")
+        if self.proxy:
+            options.add_argument(f"--proxy-server={self.proxy}")
+
         options.add_argument(f"--lang={self.localeLang}")
         options.add_argument("--log-level=3")
         options.add_argument("--ignore-certificate-errors")
@@ -144,27 +159,22 @@ class Browser:
         options.add_argument("--disable-gpu")
         options.add_argument("--disable-default-apps")
         options.add_argument("--disable-features=Translate")
-        options.add_argument(f"--remote-debugging-port={debug_port}")  # Use specific debugging port
-        options.add_argument("--disable-dev-shm-usage")  # Overcome limited resource problems
+        options.add_argument(
+            f"--remote-debugging-port={debug_port}"
+        )  # Use specific debugging port
+        options.add_argument(
+            "--disable-dev-shm-usage"
+        )  # Overcome limited resource problems
         options.add_argument("--disable-software-rasterizer")
         options.add_argument("--disable-web-security")
         options.add_argument("--disable-site-isolation-trials")
 
         seleniumwireOptions: dict[str, Any] = {"verify_ssl": False}
 
-        if self.proxy:
-            # Setup proxy if provided
-            seleniumwireOptions["proxy"] = {
-                "http": self.proxy,
-                "https": self.proxy,
-                "no_proxy": "localhost,127.0.0.1",
-            }
-
         try:
-            driver = webdriver.Chrome(
+            driver = uc.Chrome(
                 options=options,
                 seleniumwire_options=seleniumwireOptions,
-                user_data_dir=self.userDataDir.as_posix(),
             )
 
             seleniumLogger = logging.getLogger("seleniumwire")
@@ -179,7 +189,9 @@ class Browser:
                     deviceWidth = random.randint(320, min(576, int(deviceHeight * 0.7)))
                 else:
                     deviceWidth = random.randint(1024, 2560)
-                    deviceHeight = random.randint(768, min(1440, int(deviceWidth * 0.8)))
+                    deviceHeight = random.randint(
+                        768, min(1440, int(deviceWidth * 0.8))
+                    )
                 self.browserConfig["sizes"] = {
                     "height": deviceHeight,
                     "width": deviceWidth,

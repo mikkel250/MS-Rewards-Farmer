@@ -12,13 +12,13 @@ import csv
 import json
 import logging
 import logging.handlers as handlers
+import os
 import random
 import re
 import sys
 import time
 from datetime import datetime
 from pathlib import Path
-import os
 
 import pandas as pd
 import psutil
@@ -32,10 +32,10 @@ from src import (
     Searches,
     VersusGame,
 )
+from src.completion_status import CompletionStatus
 from src.loggingColoredFormatter import ColoredFormatter
 from src.notifier import Notifier
 from src.utils import Utils
-from src.completion_status import CompletionStatus
 
 POINTS_COUNTER = 0
 
@@ -56,7 +56,9 @@ def main():
 
     # Process accounts
     for currentAccount in loadedAccounts:
-        process_account_with_retry(currentAccount, notifier, args, previous_points_data, completion_status)
+        process_account_with_retry(
+            currentAccount, notifier, args, previous_points_data, completion_status
+        )
 
     # Save the current day's points data for the next day in the "logs" folder
     save_previous_points_data(previous_points_data)
@@ -112,26 +114,27 @@ def setupLogging(verbose_notifs, notifier):
             terminalHandler,
         ],
     )
-    
+
+
 def cleanupChromeProcesses():
     # Get the current user's PID
     current_pid = os.getpid()
 
-    # Function to recursively terminate child processes
-    def terminate_children(parent_pid):
-        # Get the list of all processes
-        all_processes = psutil.process_iter()
-        for process in all_processes:
-            if process.ppid() == parent_pid:
-                # Recursively terminate children of this process first
-                terminate_children(process.pid)
-                try:
-                    process.terminate()
-                except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
-                    pass
+    try:
+        # Get all chrome processes
+        for proc in psutil.process_iter(["pid", "name", "ppid"]):
+            try:
+                # Only terminate Chrome processes that are children of our script
+                if (
+                    proc.info["name"].lower().startswith(("chrome", "chromedriver"))
+                    and proc.info["ppid"] == current_pid
+                ):
+                    proc.terminate()
+            except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+                pass
+    except Exception as e:
+        logging.warning(f"Error while cleaning up Chrome processes: {e}")
 
-    # Terminate child processes starting from the script's PID
-    terminate_children(current_pid)
 
 def argumentParser() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="MS Rewards Farmer")
@@ -222,7 +225,12 @@ def setupAccounts() -> list:
     return loadedAccounts
 
 
-def executeBot(currentAccount, notifier: Notifier, args: argparse.Namespace, completion_status: CompletionStatus):
+def executeBot(
+    currentAccount,
+    notifier: Notifier,
+    args: argparse.Namespace,
+    completion_status: CompletionStatus,
+):
     logging.info(
         f'********************{currentAccount.get("username", "")}********************'
     )
@@ -287,13 +295,17 @@ def executeBot(currentAccount, notifier: Notifier, args: argparse.Namespace, com
         time.sleep(pause_before_search)
 
         # Only do desktop searches if not already completed
-        if remainingSearches != 0 and not completion_status.is_completed(account_email, "desktop_searches"):
-            accountPointsCounter = Searches(desktopBrowser, search_source=args.search_source).bingSearches(
-                remainingSearches
-            )
+        if remainingSearches != 0 and not completion_status.is_completed(
+            account_email, "desktop_searches"
+        ):
+            accountPointsCounter = Searches(
+                desktopBrowser, search_source=args.search_source
+            ).bingSearches(remainingSearches)
             completion_status.mark_completed(account_email, "desktop_searches")
         elif completion_status.is_completed(account_email, "desktop_searches"):
-            logging.info("[BING] Skipping desktop searches as they were already completed")
+            logging.info(
+                "[BING] Skipping desktop searches as they were already completed"
+            )
 
         pause_after_search = random.uniform(
             11.0, 15.0
@@ -306,13 +318,15 @@ def executeBot(currentAccount, notifier: Notifier, args: argparse.Namespace, com
         desktopBrowser.closeBrowser()
 
     # Only do mobile searches if not already completed
-    if remainingSearchesM != 0 and not completion_status.is_completed(account_email, "mobile_searches"):
+    if remainingSearchesM != 0 and not completion_status.is_completed(
+        account_email, "mobile_searches"
+    ):
         desktopBrowser.closeBrowser()
         with Browser(mobile=True, account=currentAccount, args=args) as mobileBrowser:
             accountPointsCounter = Login(mobileBrowser).login()
-            accountPointsCounter = Searches(mobileBrowser, search_source=args.search_source).bingSearches(
-                remainingSearchesM
-            )
+            accountPointsCounter = Searches(
+                mobileBrowser, search_source=args.search_source
+            ).bingSearches(remainingSearchesM)
             completion_status.mark_completed(account_email, "mobile_searches")
 
             mobileBrowser.utils.goHome()
@@ -380,11 +394,16 @@ def save_previous_points_data(data):
     with open(logs_directory / "previous_points_data.json", "w") as file:
         json.dump(data, file, indent=4)
 
-def process_account_with_retry(currentAccount, notifier, args, previous_points_data, completion_status):
+
+def process_account_with_retry(
+    currentAccount, notifier, args, previous_points_data, completion_status
+):
     retries = 3
     while retries > 0:
         try:
-            earned_points = executeBot(currentAccount, notifier, args, completion_status)
+            earned_points = executeBot(
+                currentAccount, notifier, args, completion_status
+            )
             account_name = currentAccount.get("username", "")
             previous_points = previous_points_data.get(account_name, 0)
 
@@ -413,6 +432,7 @@ def process_account_with_retry(currentAccount, notifier, args, previous_points_d
                 account_name2 = currentAccount.get("username", "")
                 logging.warning(f"Error occurred: {e}. Retrying... | {account_name2}")
                 time.sleep(10)  # Wait a bit before retrying
+
 
 if __name__ == "__main__":
     main()
