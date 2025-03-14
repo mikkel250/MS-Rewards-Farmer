@@ -403,18 +403,11 @@ class Searches:
                 f"Points earned: {points_earned}"
             )
 
-            # Return false if we didn't complete all searches
-            if successful_searches < numberOfSearches:
-                logging.warning(
-                    f"[BING] Only completed {successful_searches} out of {numberOfSearches} searches"
-                )
-                return False
-
-            return True
+            return pointsCounter  # Return points instead of True/False
 
         except Exception as e:
             logging.error(f"[BING] Critical error during searches: {str(e)}")
-            return False
+            return pointsCounter
 
     def bingSearch(self, word: str):
         # Function to perform a single Bing search
