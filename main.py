@@ -241,21 +241,14 @@ def executeBot(
     account_email = currentAccount.get("username", "")
 
     with Browser(mobile=False, account=currentAccount, args=args) as desktopBrowser:
-        # Only login if not already completed
-        if not completion_status.is_completed(account_email, "login"):
-            accountPointsCounter = Login(desktopBrowser).login()
-            startingPoints = accountPointsCounter
-            if startingPoints == "Locked":
-                notifier.send("🚫 Account is Locked", currentAccount)
-                return 0
-            if startingPoints == "Verify":
-                notifier.send("❗ Account needs to be verified", currentAccount)
-                return 0
-            completion_status.mark_completed(account_email, "login")
-        else:
-            logging.info("[LOGIN] Skipping login as it was already completed")
-            accountPointsCounter = desktopBrowser.utils.getAccountPoints()
-            startingPoints = accountPointsCounter
+        accountPointsCounter = Login(desktopBrowser).login()
+        startingPoints = accountPointsCounter
+        if startingPoints == "Locked":
+            notifier.send("🚫 Account is Locked", currentAccount)
+            return 0
+        if startingPoints == "Verify":
+            notifier.send("❗ Account needs to be verified", currentAccount)
+            return 0
 
         logging.info(
             f"[POINTS] You have {desktopBrowser.utils.formatNumber(accountPointsCounter)} points on your account"

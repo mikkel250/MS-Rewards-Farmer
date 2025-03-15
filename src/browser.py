@@ -139,7 +139,10 @@ class Browser:
         # Configure and setup the Chrome browser
         options = uc.ChromeOptions()
         options.add_argument("--new-instance")  # Force new instance
-        options.add_argument("--user-data-dir=chrome-temp")  # Use separate user profile
+        
+        # Use a subdirectory for the actual Chrome user data
+        chrome_temp_dir = Path(__file__).resolve().parent.parent / "chrome-temp" / "user-data"
+        options.add_argument(f"--user-data-dir={chrome_temp_dir}")
 
         if self.headless:
             options.add_argument("--headless=new")

@@ -45,8 +45,8 @@ class Login:
         self.utils.goHome()
         points = self.utils.getAccountPoints()
 
-        logging.info("[LOGIN] " + "Ensuring you are logged into Bing...")
-        self.checkBingLogin()
+        # logging.info("[LOGIN] " + "Ensuring you are logged into Bing...")
+        # self.checkBingLogin()
         logging.info("[LOGIN] Logged-in successfully !")
         return points
 

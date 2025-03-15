@@ -120,9 +120,7 @@ class Searches:
         if self.search_source == "list":
             # Create a directory for search results if it doesn't exist
             script_dir = Path(__file__).resolve().parent.parent
-            self.results_dir = script_dir / "search_results"
-            if not os.path.exists(self.results_dir):
-                os.makedirs(self.results_dir)
+            self.results_dir = script_dir / "logs"
             # Create a new results file for each day
             self.results_file = (
                 self.results_dir
@@ -336,10 +334,8 @@ class Searches:
         try:
             # Get initial points to compare against
             initial_points = self.browser.utils.getBingAccountPoints()
-            successful_searches = 0
-            points_per_search = (
-                5  # Standard points per search, could be different for mobile/desktop
-            )
+            
+            # Remove points_per_search as it's not needed
 
             # Get search terms based on source
             if self.search_source == "trends":
@@ -365,20 +361,14 @@ class Searches:
                 try:
                     current_points = self.bingSearch(word)
 
-                    # Check if points increased from the search
+                    # Simplified points check - just update counter and reset attempt
                     if current_points > pointsCounter:
-                        successful_searches += 1
                         pointsCounter = current_points
-                        attempt = 0  # Reset attempt counter on successful search
-                        logging.info(
-                            f"[BING] Successful search {successful_searches}/{numberOfSearches}"
-                        )
+                        attempt = 0
                     else:
                         attempt += 1
                         if attempt >= 2:
-                            logging.warning(
-                                "[BING] Possible blockage. Refreshing the page."
-                            )
+                            logging.warning("[BING] Possible blockage. Refreshing the page.")
                             self.webdriver.refresh()
                             time.sleep(5)  # Wait for refresh
                             attempt = 0
@@ -396,14 +386,12 @@ class Searches:
             if self.search_source == "list":
                 self.saveSearchResults()
 
-            # Log completion status
+            # Simplified completion message - just show total points earned
             points_earned = pointsCounter - initial_points
-            logging.info(
-                f"[BING] Completed {successful_searches}/{numberOfSearches} searches. "
-                f"Points earned: {points_earned}"
-            )
+            if points_earned > 0:
+                logging.info(f"[BING] Searches completed. Points earned: {points_earned}")
 
-            return pointsCounter  # Return points instead of True/False
+            return pointsCounter
 
         except Exception as e:
             logging.error(f"[BING] Critical error during searches: {str(e)}")
@@ -444,8 +432,8 @@ class Searches:
                     result_data = self.extractSearchResults(word)
                     self.search_results.append(result_data)
 
-                # Random delay between searches (15-180 seconds)
-                time.sleep(Utils.randomSeconds(15, 180))
+                # Random delay between searches (15-55 seconds)
+                time.sleep(Utils.randomSeconds(3, 33))
 
                 # Random number of scrolls (2-4)
                 num_scrolls = random.randint(2, 4)
