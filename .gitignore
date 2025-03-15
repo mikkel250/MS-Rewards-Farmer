@@ -181,6 +181,6 @@ pyrightconfig.json
 accounts.json
 sessions
 logs
-chrome-temp/
+chrome-temp/*
 runbot.bat
 .DS_Store
