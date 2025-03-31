@@ -23,18 +23,18 @@ class Browser:
     def __init__(self, mobile: bool, account, args: Any) -> None:
         # Initialize browser instance
         self.mobile = mobile
+        self.args = args
         self.browserType = "mobile" if mobile else "desktop"
-        self.headless = not args.visible
+        
+        # Set headless mode: use -v/--visible flag to override account settings
+        self.headless = not args.visible if hasattr(args, 'visible') else account.get("headless", False)
+        
         self.username = account["username"]
         self.password = account["password"]
         self.localeLang, self.localeGeo = self.getCCodeLang(args.lang, args.geo)
-        self.proxy = None
-        if args.proxy:
-            self.proxy = args.proxy
-        elif account.get("proxy"):
-            self.proxy = account["proxy"]
-        self.userDataDir = self.setupProfiles()
-        self.browserConfig = Utils.getBrowserConfig(self.userDataDir)
+        self.proxy = account.get("proxy", None)
+        self.userDataDir = account.get("userDataDir", self.setupProfiles())
+        self.browserConfig = account.get("browser", {})
         (
             self.userAgent,
             self.userAgentMetadata,
@@ -97,55 +97,49 @@ class Browser:
         )
 
     def cleanupChromeProcesses(self):
-        """Clean up only Chrome processes created by this script"""
+        """Clean up any existing Chrome processes"""
         try:
-            # Get the current script's process ID
-            current_pid = os.getpid()
-
-            # Get all Chrome processes
-            chrome_processes = []
-            for proc in psutil.process_iter(["pid", "name", "ppid"]):
-                try:
-                    # Only target Chrome processes that are children of our script
-                    if "chrome" in proc.info["name"].lower() and (
-                        proc.info["ppid"] == current_pid
-                        or psutil.Process(proc.info["ppid"]).ppid() == current_pid
-                    ):
-                        chrome_processes.append(proc)
-                except (
-                    psutil.NoSuchProcess,
-                    psutil.AccessDenied,
-                    psutil.ZombieProcess,
-                ):
-                    continue
-
-            # Terminate identified processes
-            for proc in chrome_processes:
-                try:
-                    proc.terminate()
-                except (
-                    psutil.NoSuchProcess,
-                    psutil.AccessDenied,
-                    psutil.ZombieProcess,
-                ):
-                    continue
-
-            time.sleep(1)  # Brief wait to ensure cleanup
-
+            if os.name == 'nt':  # Windows
+                os.system('taskkill /F /IM chrome.exe /T 2>nul')
+                os.system('taskkill /F /IM chromedriver.exe /T 2>nul')
+            else:  # Linux/Mac
+                os.system('pkill -f chrome 2>/dev/null')
+                os.system('pkill -f chromedriver 2>/dev/null')
+            
+            # Give processes time to close
+            time.sleep(2)
+            
+            # Try to clean up any lock files in the chrome-temp directory
+            chrome_temp = Path("chrome-temp")
+            if chrome_temp.exists():
+                for file in chrome_temp.glob("*.lock"):
+                    try:
+                        file.unlink()
+                    except Exception as e:
+                        logging.debug(f"[BROWSER] Could not remove lock file {file}: {str(e)}")
+                    
         except Exception as e:
             logging.warning(f"[BROWSER] Failed to cleanup Chrome processes: {str(e)}")
 
     def browserSetup(self, debug_port: int) -> WebDriver:
         # Configure and setup the Chrome browser
         options = uc.ChromeOptions()
-        options.add_argument("--new-instance")  # Force new instance
+        options.add_argument("--new-instance")
         
-        # Use a subdirectory for the actual Chrome user data
-        chrome_temp_dir = Path(__file__).resolve().parent.parent / "chrome-temp" / "user-data"
-        options.add_argument(f"--user-data-dir={chrome_temp_dir}")
+        # Use the existing chrome-temp directory
+        chrome_temp_dir = Path("chrome-temp")
+        if not chrome_temp_dir.exists():
+            chrome_temp_dir.mkdir(parents=True)
+        
+        options.add_argument(f"--user-data-dir={chrome_temp_dir.absolute()}")
 
+        # Set headless mode
         if self.headless:
             options.add_argument("--headless=new")
+            logging.info("[BROWSER] Running in headless mode")
+        else:
+            logging.info("[BROWSER] Running in visible mode")
+
         if self.userDataDir:
             options.add_argument(f"--user-data-dir={self.userDataDir}")
         if self.proxy:

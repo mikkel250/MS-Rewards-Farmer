@@ -139,7 +139,9 @@ def cleanupChromeProcesses():
 def argumentParser() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="MS Rewards Farmer")
     parser.add_argument(
-        "-v", "--visible", action="store_true", help="Optional: Visible browser"
+        "-v", "--visible",
+        action="store_true",
+        help="Optional: Show the browser window (disable headless mode)",
     )
     parser.add_argument(
         "-l", "--lang", type=str, default=None, help="Optional: Language (ex: en)"
@@ -190,6 +192,11 @@ def argumentParser() -> argparse.Namespace:
         choices=["trends", "crypto"],
         default="crypto",
         help="Optional: Source for search terms (trends: Google Trends, crypto: predefined crypto list)",
+    )
+    parser.add_argument(
+        "--test",
+        action="store_true",
+        help="Optional: Run in test mode (bypasses points checking and completion status)",
     )
     return parser.parse_args()
 
@@ -288,7 +295,12 @@ def executeBot(
         time.sleep(pause_before_search)
 
         # Only do desktop searches if not already completed
-        if remainingSearches != 0 and not completion_status.is_completed(
+        if args.test:
+            # In test mode, always do searches regardless of completion status
+            accountPointsCounter = Searches(
+                desktopBrowser, search_source=args.search_source
+            ).bingSearches(remainingSearches)
+        elif remainingSearches != 0 and not completion_status.is_completed(
             account_email, "desktop_searches"
         ):
             accountPointsCounter = Searches(
@@ -311,7 +323,15 @@ def executeBot(
         desktopBrowser.closeBrowser()
 
     # Only do mobile searches if not already completed
-    if remainingSearchesM != 0 and not completion_status.is_completed(
+    if args.test:
+        # In test mode, always do mobile searches
+        desktopBrowser.closeBrowser()
+        with Browser(mobile=True, account=currentAccount, args=args) as mobileBrowser:
+            accountPointsCounter = Login(mobileBrowser).login()
+            accountPointsCounter = Searches(
+                mobileBrowser, search_source=args.search_source
+            ).bingSearches(remainingSearchesM)
+    elif remainingSearchesM != 0 and not completion_status.is_completed(
         account_email, "mobile_searches"
     ):
         desktopBrowser.closeBrowser()

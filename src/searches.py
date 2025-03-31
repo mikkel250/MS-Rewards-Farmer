@@ -7,6 +7,7 @@ import time
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Literal
+import urllib.parse
 
 import requests
 from selenium.common.exceptions import TimeoutException
@@ -14,6 +15,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
+from bs4 import BeautifulSoup
 
 from src.browser import Browser
 from src.utils import Utils
@@ -21,10 +23,26 @@ from src.utils import Utils
 
 class Searches:
     def __init__(
-        self, browser: Browser, search_source: Literal["trends", "list"] = "list"
+        self, browser: Browser, search_source: Literal["trends", "crypto"] = "crypto"
     ):
-        self.CRYPTO_SEARCH_TERMS = [
-            # Major Cryptocurrencies
+        # Define trusted news sources
+        self.NEWS_SOURCES = [
+            "CoinDesk",
+            "U.Today",
+            "Decrypt",
+            "Bankless",
+            "BeInCrypto",
+            "TheBlock",
+            "Bitcoin Magazine",
+            "Blockworks",
+            "Coin Bureau",
+            "The Defiant",
+            "reddit cryptocurrency",
+            "crypto twitter"
+        ]
+        
+        # All tickers from original list, maintaining exact grouping
+        self.MAJOR_CRYPTOS = [
             "bitcoin",
             "ethereum",
             "solana",
@@ -41,20 +59,11 @@ class Searches:
             "ton",
             "inj crypto",
             "kaspa crypto",
-            "xrp crypto",
-            # DeFi & Infrastructure
-            "defi",
-            "web3",
-            "blockchain",
-            "crypto investing",
-            "crypto trading",
-            "crypto prices news",
-            "crypto market",
-            "crypto analysis",
-            "social media trends in crypto",
-            "trending crypto terms on social media",
-            # New Tickers from List
-            "om crypto",
+            "xrp crypto"
+        ]
+        
+        self.OTHER_CRYPTOS = [
+            "om mantra crypto",
             "sui crypto",
             "aero crypto",
             "ath crypto",
@@ -77,8 +86,10 @@ class Searches:
             "stx crypto",
             "corechain crypto",
             "uni crypto",
-            "sei crypto",
-            "harry crypto",
+            "sei crypto"
+        ]
+        
+        self.MEME_COINS = [
             "HarryPotterObamaSonic10Inu crypto",
             "mog crypto",
             "op crypto",
@@ -111,150 +122,285 @@ class Searches:
             "cpool crypto",
             "uni crypto",
             "sei crypto",
-            "scf crypto",
+            "scf crypto"
         ]
+        
+        # Generate comprehensive search terms
+        self.CRYPTO_SEARCH_TERMS = []
+        
+        # Function to add search terms with sources
+        def add_with_sources(term_list):
+            # Define excluded domains using Bing's -site: operator with wildcards
+            excluded_domains = (
+                "-site:*coinmarketcap.com -site:*coingecko.com -site:*crypto.com "
+                "-site:*etoro.com -site:*tradingview.com -site:*binance.com "
+                "-site:*coinbase.com -site:*kraken.com -site:*gemini.com "
+                "-site:*bitfinex.com -site:*kucoin.com -site:*huobi.com "
+                "-site:*okx.com -site:*bybit.com -site:*gate.io -site:*mexc.com "
+                "-site:*aws.amazon.com -site:*cloud.google.com -site:*azure.microsoft.com "
+                "-site:*github.com -site:*stackoverflow.com -site:*wikipedia.org "
+                "-site:*coincodex.com -site:*livecoinwatch.com -site:*yahoo.com/quote "
+            )
+            
+            # Add language filter, time filter, and exclude non-news content
+            search_filters = (
+                "language:english freshness:30 "
+                "-price -prediction -chart -trade -buy -sell -convert "
+                "-tutorial -course -documentation -quote -market -exchange " + excluded_domains
+            )
+            
+            for term in term_list:
+                # Add basic term with filters
+                self.CRYPTO_SEARCH_TERMS.append(f"{term} news {search_filters}")
+                # Add term + source combinations with filters
+                for source in self.NEWS_SOURCES:
+                    self.CRYPTO_SEARCH_TERMS.append(f"{term} {source} {search_filters}")
+        
+        # Add all terms with their source combinations
+        add_with_sources(self.MAJOR_CRYPTOS)
+        add_with_sources(self.OTHER_CRYPTOS)
+        add_with_sources(self.MEME_COINS)
+
         self.browser = browser
         self.webdriver = browser.webdriver
         self.search_source = search_source
-        # Only create results directory and files if using crypto list
-        if self.search_source == "list":
-            # Create a directory for search results if it doesn't exist
-            script_dir = Path(__file__).resolve().parent.parent
-            self.results_dir = script_dir / "logs"
+        self.test_mode = browser.args.test
+        
+        # Debug logging
+        logging.info(f"[DEBUG] Initializing Searches with search_source: {self.search_source}")
+        
+        # Only create results directory and files if using crypto
+        if self.search_source == "crypto":
+            self.results_dir = Path("logs")
+            logging.info(f"[DEBUG] Results directory path: {self.results_dir.absolute()}")
+            
             # Create a new results file for each day
             self.results_file = (
                 self.results_dir
                 / f"crypto_search_results_{datetime.now().strftime('%Y%m%d')}.json"
             )
-            self.summary_file = (
-                self.results_dir
-                / f"crypto_search_summary_{datetime.now().strftime('%Y%m%d')}.txt"
-            )
+            logging.info(f"[DEBUG] Results file path: {self.results_file.absolute()}")
+            
+            # Add a file to track remaining search terms
+            self.remaining_terms_file = self.results_dir / "remaining_crypto_terms.json"
+            
+            # Add a file to track seen URLs
+            self.seen_urls_file = self.results_dir / "seen_urls.json"
+            
+            # Initialize empty results list
             self.search_results = []
+            
+            # Initialize or load remaining terms
+            self.remaining_terms = self._load_remaining_terms()
+            
+            # Initialize or load seen URLs
+            self.seen_urls = self._load_seen_urls()
+            
+            # Try to create an empty file
+            try:
+                with open(self.results_file, 'a') as f:
+                    if self.results_file.stat().st_size == 0:
+                        json.dump([], f)
+                logging.info(f"[DEBUG] Successfully created/verified results file")
+            except Exception as e:
+                logging.error(f"[DEBUG] Failed to create results file: {str(e)}")
         else:
             self.results_dir = None
             self.results_file = None
             self.summary_file = None
             self.search_results = None
 
-    def generateSummary(self):
-        """Generate a summary of the search results"""
+    def _load_remaining_terms(self) -> list:
+        """Load or initialize the list of remaining search terms"""
         try:
-            # Group results by search term
-            term_results = {}
-            for result in self.search_results:
-                term = result.get("search_term", "Unknown")
-                if term not in term_results:
-                    term_results[term] = []
-                term_results[term].append(result)
-
-            # Extract price information
-            price_pattern = r"\$[\d,]+\.?\d*"
-            price_data = {}
-            for term, results in term_results.items():
-                for result in results:
-                    if result.get("price_info"):
-                        price_match = re.search(price_pattern, result["price_info"])
-                        if price_match:
-                            price = float(
-                                price_match.group().replace("$", "").replace(",", "")
-                            )
-                            if term not in price_data:
-                                price_data[term] = []
-                            price_data[term].append(price)
-
-            # Generate summary
-            with open(self.summary_file, "w", encoding="utf-8") as f:
-                f.write(
-                    f"Crypto Search Summary - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
-                )
-                f.write("=" * 50 + "\n\n")
-
-                # Price Summary
-                f.write("Price Information:\n")
-                f.write("-" * 20 + "\n")
-                for term, prices in price_data.items():
-                    if prices:
-                        avg_price = sum(prices) / len(prices)
-                        f.write(f"{term}: ${avg_price:,.2f}\n")
-                f.write("\n")
-
-                # News and Updates
-                f.write("Recent News and Updates:\n")
-                f.write("-" * 20 + "\n")
-                for term, results in term_results.items():
-                    f.write(f"\n{term.upper()}:\n")
-                    for result in results:
-                        for snippet in result.get("top_results", []):
-                            f.write(f"- {snippet['title']}\n")
-                            f.write(f"  {snippet['snippet'][:200]}...\n")
-
-                # Error Summary
-                errors = [r for r in self.search_results if "error" in r]
-                if errors:
-                    f.write("\nErrors Encountered:\n")
-                    f.write("-" * 20 + "\n")
-                    for error in errors:
-                        f.write(f"- {error['search_term']}: {error['error']}\n")
-
-            logging.info(f"[SUMMARY] Search summary saved to {self.summary_file}")
+            if self.remaining_terms_file.exists():
+                with open(self.remaining_terms_file, 'r') as f:
+                    terms = json.load(f)
+                    if terms:  # If we have remaining terms, use them
+                        logging.info(f"[TERMS] Loaded {len(terms)} remaining search terms")
+                        return terms
+            
+            # If file doesn't exist or is empty, start with full list
+            logging.info("[TERMS] Starting with fresh search terms list")
+            return self.CRYPTO_SEARCH_TERMS.copy()
         except Exception as e:
-            logging.error(f"[SUMMARY] Failed to generate summary: {str(e)}")
+            logging.error(f"[TERMS] Error loading remaining terms: {str(e)}")
+            return self.CRYPTO_SEARCH_TERMS.copy()
+
+    def _save_remaining_terms(self):
+        """Save the current list of remaining search terms"""
+        try:
+            with open(self.remaining_terms_file, 'w') as f:
+                json.dump(self.remaining_terms, f, indent=2)
+            logging.info(f"[TERMS] Saved {len(self.remaining_terms)} remaining terms")
+        except Exception as e:
+            logging.error(f"[TERMS] Error saving remaining terms: {str(e)}")
+
+    def _load_seen_urls(self) -> set:
+        """Load previously seen URLs from file"""
+        try:
+            if self.seen_urls_file.exists():
+                with open(self.seen_urls_file, 'r') as f:
+                    return set(json.load(f))
+            return set()
+        except Exception as e:
+            logging.error(f"[URLS] Error loading seen URLs: {str(e)}")
+            return set()
+
+    def _save_seen_urls(self):
+        """Save seen URLs to file with size check"""
+        try:
+            with open(self.seen_urls_file, 'w') as f:
+                json.dump(list(self.seen_urls), f)
+            
+            # Check file size (in GB)
+            file_size_gb = self.seen_urls_file.stat().st_size / (1024 * 1024 * 1024)
+            if file_size_gb > 250:
+                logging.warning(
+                    f"[URLS] Warning: seen_urls.json has grown very large ({file_size_gb:.2f} GB). "
+                    "Consider archiving or clearing old entries."
+                )
+        except Exception as e:
+            logging.error(f"[URLS] Error saving seen URLs: {str(e)}")
+
+    def extractSearchResults(self, soup) -> dict:
+        processed = 0
+        try:
+            logging.info("[EXTRACT] Starting to extract search results")
+            results = []
+            main_results = soup.find_all("li", class_="b_algo")
+            
+            # Add these blocked domains to check against decoded URLs
+            blocked_domains = {
+                "coinmarketcap.com", "coingecko.com", "crypto.com",
+                "etoro.com", "tradingview.com", "binance.com",
+                "coinbase.com", "kraken.com", "gemini.com",
+                "bitfinex.com", "kucoin.com", "huobi.com",
+                "okx.com", "bybit.com", "gate.io", "mexc.com",
+                "livecoinwatch.com", "yahoo.com/quote"
+            }
+
+            for result in main_results:
+                if processed >= 8:
+                    break
+                    
+                try:
+                    url_element = result.find("a")
+                    if not url_element:
+                        continue
+                        
+                    url = url_element.get("href", "")
+                    
+                    # Skip if we've seen this URL before
+                    if url in self.seen_urls:
+                        logging.debug(f"[EXTRACT] Skipping previously seen URL: {url}")
+                        continue
+                    
+                    # Extract actual domain from bing redirect URL
+                    if "bing.com/ck/a" in url and "u=a1" in url:
+                        try:
+                            # Extract and decode the actual URL from Bing's redirect
+                            encoded_url = url.split("u=a1")[1].split("&")[0]
+                            actual_url = urllib.parse.unquote(encoded_url)
+                            domain = urllib.parse.urlparse(actual_url).netloc.lower()
+                        except:
+                            domain = urllib.parse.urlparse(url).netloc.lower()
+                    else:
+                        domain = urllib.parse.urlparse(url).netloc.lower()
+                    
+                    # Skip if domain is in blocked list
+                    if any(blocked in domain for blocked in blocked_domains):
+                        logging.debug(f"[EXTRACT] Skipping blocked domain: {domain}")
+                        continue
+                    
+                    title = url_element.get_text().strip()
+                    main_content = ""
+                    
+                    snippet_element = result.find("div", class_="b_caption")
+                    if snippet_element:
+                        p_tags = snippet_element.find_all("p")
+                        main_content = " ".join(p.get_text().strip() for p in p_tags if p.get_text())
+                    
+                    # Format source information
+                    source_info = f"Source: {domain}"
+                    if any(source.lower() in title.lower() for source in self.NEWS_SOURCES):
+                        for source in self.NEWS_SOURCES:
+                            if source.lower() in title.lower():
+                                title = title.replace(source, "").replace("  ", " ").strip()
+                                source_info = f"Source: {source} ({domain})"
+                                break
+                    
+                    result_data = {
+                        "title": title,
+                        "url": url,
+                        "content": main_content,
+                        "source": source_info,
+                        "timestamp": datetime.now().isoformat()
+                    }
+                    
+                    # Add URL to seen set and append result
+                    self.seen_urls.add(url)
+                    results.append(result_data)
+                    processed += 1
+                    
+                except Exception as e:
+                    logging.debug(f"Error processing individual result: {str(e)}")
+                    continue
+            
+            # Save updated seen URLs after processing
+            self._save_seen_urls()
+            
+            return {
+                "results": results,
+                "status": "success",
+                "timestamp": datetime.now().isoformat(),
+                "total_found": len(results)
+            }
+            
+        except Exception as e:
+            logging.error(f"Error extracting search results: {str(e)}")
+            return {"results": [], "status": "error", "error": str(e)}
 
     def saveSearchResults(self):
         """Save search results to a JSON file"""
         try:
+            if not self.search_results:
+                logging.info("[RESULTS] No results to save")
+                return
+            
+            logging.info(f"[RESULTS] Attempting to save {len(self.search_results)} results")
+            
+            # Load existing results if file exists
+            existing_results = []
+            if self.results_file.exists():
+                try:
+                    logging.info(f"[RESULTS] Loading existing results from {self.results_file}")
+                    with open(self.results_file, "r", encoding="utf-8") as f:
+                        existing_results = json.load(f)
+                    logging.info(f"[RESULTS] Loaded {len(existing_results)} existing results")
+                except json.JSONDecodeError:
+                    logging.warning("[RESULTS] Existing results file was corrupted, starting fresh")
+
+            # Combine existing and new results
+            all_results = existing_results + self.search_results
+            
+            # Write the combined results
+            logging.info(f"[RESULTS] Writing {len(all_results)} total results to file")
             with open(self.results_file, "w", encoding="utf-8") as f:
-                json.dump(self.search_results, f, indent=2, ensure_ascii=False)
-            logging.info(f"[RESULTS] Search results saved to {self.results_file}")
-            # Generate summary after saving results
-            self.generateSummary()
+                json.dump(all_results, f, indent=2, ensure_ascii=False)
+            
+            logging.info(f"[RESULTS] Successfully saved results to {self.results_file}")
+            
+            # Clear the current results after saving
+            self.search_results = []
+            
+            # Save seen URLs after successful save
+            self._save_seen_urls()
+            
         except Exception as e:
             logging.error(f"[RESULTS] Failed to save search results: {str(e)}")
-
-    def extractSearchResults(self, search_term: str) -> dict:
-        """Extract relevant information from search results"""
-        try:
-            # Wait for search results to load
-            WebDriverWait(self.webdriver, 10).until(
-                EC.presence_of_element_located((By.ID, "b_results"))
-            )
-
-            # Get the main search results
-            results = self.webdriver.find_elements(By.CLASS_NAME, "b_algo")
-
-            # Extract relevant information
-            snippets = []
-            for result in results[:3]:  # Get top 3 results
-                try:
-                    title = result.find_element(By.TAG_NAME, "h2").text
-                    snippet = result.find_element(By.CLASS_NAME, "b_caption").text
-                    snippets.append({"title": title, "snippet": snippet})
-                except:
-                    continue
-
-            # Look for price information in the knowledge panel
-            try:
-                price_element = self.webdriver.find_element(By.CLASS_NAME, "b_entityTP")
-                price_info = price_element.text
-            except:
-                price_info = None
-
-            return {
-                "search_term": search_term,
-                "timestamp": datetime.now().isoformat(),
-                "price_info": price_info,
-                "top_results": snippets,
-            }
-        except Exception as e:
-            logging.warning(
-                f"[RESULTS] Failed to extract results for {search_term}: {str(e)}"
-            )
-            return {
-                "search_term": search_term,
-                "timestamp": datetime.now().isoformat(),
-                "error": str(e),
-            }
+            logging.error(f"[RESULTS] Current results count: {len(self.search_results)}")
+            logging.error(f"[RESULTS] Results file path: {self.results_file}")
 
     def getGoogleTrends(self, wordsCount: int) -> list:
         # Function to retrieve Google Trends search terms
@@ -326,16 +472,15 @@ class Searches:
             return []
 
     def bingSearches(self, numberOfSearches: int, pointsCounter: int = 0):
-        # Function to perform Bing searches
         logging.info(
             f"[BING] Starting {self.browser.browserType.capitalize()} Edge Bing searches..."
         )
+        if self.test_mode:
+            logging.info("[BING] Running in test mode - points checking disabled")
 
         try:
-            # Get initial points to compare against
-            initial_points = self.browser.utils.getBingAccountPoints()
-            
-            # Remove points_per_search as it's not needed
+            # Get initial points to compare against (skip in test mode)
+            initial_points = 0 if self.test_mode else self.browser.utils.getBingAccountPoints()
 
             # Get search terms based on source
             if self.search_source == "trends":
@@ -361,17 +506,18 @@ class Searches:
                 try:
                     current_points = self.bingSearch(word)
 
-                    # Simplified points check - just update counter and reset attempt
-                    if current_points > pointsCounter:
-                        pointsCounter = current_points
-                        attempt = 0
-                    else:
-                        attempt += 1
-                        if attempt >= 2:
-                            logging.warning("[BING] Possible blockage. Refreshing the page.")
-                            self.webdriver.refresh()
-                            time.sleep(5)  # Wait for refresh
+                    # Skip points checking in test mode
+                    if not self.test_mode:
+                        if current_points > pointsCounter:
+                            pointsCounter = current_points
                             attempt = 0
+                        else:
+                            attempt += 1
+                            if attempt >= 2:
+                                logging.warning("[BING] Possible blockage. Refreshing the page.")
+                                self.webdriver.refresh()
+                                time.sleep(5)
+                                attempt = 0
                 except Exception as e:
                     logging.warning(f"[BING] Error during search: {str(e)}")
                     attempt += 1
@@ -382,14 +528,13 @@ class Searches:
                         attempt = 0
                     continue
 
-            # Only save results if using crypto list
-            if self.search_source == "list":
-                self.saveSearchResults()
-
-            # Simplified completion message - just show total points earned
-            points_earned = pointsCounter - initial_points
-            if points_earned > 0:
-                logging.info(f"[BING] Searches completed. Points earned: {points_earned}")
+            # Only show points earned if not in test mode
+            if not self.test_mode:
+                points_earned = pointsCounter - initial_points
+                if points_earned > 0:
+                    logging.info(f"[BING] Searches completed. Points earned: {points_earned}")
+            else:
+                logging.info("[BING] Test searches completed")
 
             return pointsCounter
 
@@ -428,9 +573,28 @@ class Searches:
                 time.sleep(3)
 
                 # Only extract and save search results if using crypto list
-                if self.search_source == "list":
-                    result_data = self.extractSearchResults(word)
-                    self.search_results.append(result_data)
+                if self.search_source == "crypto":
+                    try:
+                        logging.info(f"[BING] Processing search results for '{word}'")
+                        # Create BeautifulSoup object from page source
+                        soup = BeautifulSoup(self.webdriver.page_source, 'html.parser')
+                        result_data = self.extractSearchResults(soup)
+                        
+                        if result_data["results"]:
+                            logging.info(f"[BING] Found {len(result_data['results'])} results for '{word}'")
+                            self.search_results.append({
+                                "search_term": word,
+                                "timestamp": datetime.now().isoformat(),
+                                "results": result_data["results"]
+                            })
+                            # Save immediately after each successful search
+                            logging.info(f"[BING] Saving results for '{word}'")
+                            self.saveSearchResults()
+                        else:
+                            logging.warning(f"[BING] No results found for '{word}'")
+                    except Exception as e:
+                        logging.error(f"[BING] Error processing search results for '{word}': {str(e)}")
+                        logging.exception("Full traceback:")
 
                 # Random delay between searches (15-55 seconds)
                 time.sleep(Utils.randomSeconds(3, 33))
@@ -472,8 +636,45 @@ class Searches:
                 continue
 
     def getCryptoList(self, wordsCount: int) -> list:
-        """Get search terms from the predefined crypto list"""
-        # Randomly sample from the list instead of taking sequential items
-        return random.sample(
-            self.CRYPTO_SEARCH_TERMS, min(wordsCount, len(self.CRYPTO_SEARCH_TERMS))
-        )
+        """Get search terms from the remaining terms list"""
+        if not self.remaining_terms:
+            # If we've used all terms, reset the list
+            logging.info("[TERMS] Resetting search terms list")
+            self.remaining_terms = self.CRYPTO_SEARCH_TERMS.copy()
+            self._save_remaining_terms()
+
+        # Take required number of terms
+        selected_terms = []
+        for _ in range(min(wordsCount, len(self.remaining_terms))):
+            # Randomly select and remove a term
+            term_index = random.randrange(len(self.remaining_terms))
+            selected_terms.append(self.remaining_terms.pop(term_index))
+        
+        # Save the updated remaining terms
+        self._save_remaining_terms()
+        
+        logging.info(f"[TERMS] Selected {len(selected_terms)} terms, {len(self.remaining_terms)} remaining")
+        return selected_terms
+
+    def _cleanup_seen_urls(self, days_to_keep: int = 30):
+        """Remove URLs older than specified days from seen set"""
+        try:
+            # Load all results files from the past N days
+            recent_urls = set()
+            today = datetime.now()
+            for i in range(days_to_keep):
+                date = today - timedelta(days=i)
+                result_file = self.results_dir / f"crypto_search_results_{date.strftime('%Y%m%d')}.json"
+                if result_file.exists():
+                    with open(result_file, 'r') as f:
+                        data = json.load(f)
+                        for search in data:
+                            for result in search.get('results', []):
+                                recent_urls.add(result['url'])
+            
+            # Update seen URLs to only include recent ones
+            self.seen_urls = recent_urls
+            self._save_seen_urls()
+            logging.info(f"[URLS] Cleaned up seen URLs, keeping {len(self.seen_urls)} recent URLs")
+        except Exception as e:
+            logging.error(f"[URLS] Error during URL cleanup: {str(e)}")
